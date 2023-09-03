@@ -26,27 +26,29 @@ Date : 09/5/17
 .. OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 .. SOFTWARE.
 """
-import networkx as nx
-import numpy as np
 import itertools
 import warnings
-import torch as th
-import pandas as pd
 from copy import deepcopy
-from tqdm import trange
-from torch.utils.data import DataLoader
+
+import networkx as nx
+import numpy as np
+import pandas as pd
+import torch as th
 from sklearn.preprocessing import scale
-from ..pairwise.GNN import GNN
-from ...utils.loss import MMDloss
-from ...utils.Settings import SETTINGS
+from torch.utils.data import DataLoader
+from tqdm import trange
+
 from ...utils.graph import dagify_min_edge
+from ...utils.loss import MMDloss
 from ...utils.parallel import parallel_run
+from ...utils.Settings import SETTINGS
+from ..pairwise.GNN import GNN
 from .model import GraphModel
 
 
 def message_warning(msg, *a, **kwargs):
     """Ignore everything except the message."""
-    return str(msg) + '\n'
+    return str(msg) + "\n"
 
 
 warnings.formatwarning = message_warning
@@ -89,8 +91,7 @@ class CGNN_model(th.nn.Module):
         initial_graph (numpy.array): Initial graph in the confounding case.
     """
 
-    def __init__(self, adj_matrix, batch_size, nh=20, device=None,
-                 confounding=False, initial_graph=None, **kwargs):
+    def __init__(self, adj_matrix, batch_size, nh=20, device=None, confounding=False, initial_graph=None, **kwargs):
         """Init the model by creating the blocks and extracting the topological order."""
         super(CGNN_model, self).__init__()
         self.topological_order = [i for i in nx.topological_sort(nx.DiGraph(adj_matrix))]
@@ -102,27 +103,29 @@ class CGNN_model(th.nn.Module):
             self.i_adj_matrix = initial_graph
         self.blocks = th.nn.ModuleList()
         self.generated = [None for i in range(self.adjacency_matrix.shape[0])]
-        self.register_buffer('noise', th.zeros(batch_size,
-                                               self.adjacency_matrix.shape[0]))
+        self.register_buffer("noise", th.zeros(batch_size, self.adjacency_matrix.shape[0]))
         if self.confounding:
             corr_noises = []
             for i, j in zip(*np.nonzero(self.i_adj_matrix)):
                 if i < j:
-                    pname = 'cnoise_{}'.format(i)
+                    pname = "cnoise_{}".format(i)
                     self.register_buffer(pname, th.FloatTensor(batch_size, 1))
                     corr_noises.append([(i, j), getattr(self, pname)])
 
             self.corr_noise = dict(corr_noises)
         self.criterion = MMDloss(batch_size).to(device)
-        self.register_buffer('score', th.FloatTensor([0]))
+        self.register_buffer("score", th.FloatTensor([0]))
         self.batch_size = batch_size
 
         for i in range(self.adjacency_matrix.shape[0]):
             if not confounding:
                 self.blocks.append(CGNN_block([int(self.adjacency_matrix[:, i].sum()) + 1, nh, 1]))
             else:
-                self.blocks.append(CGNN_block([int(self.i_adj_matrix[:, i].sum()) +
-                                               int(self.adjacency_matrix[:, i].sum()) + 1, nh, 1]))
+                self.blocks.append(
+                    CGNN_block(
+                        [int(self.i_adj_matrix[:, i].sum()) + int(self.adjacency_matrix[:, i].sum()) + 1, nh, 1]
+                    )
+                )
 
     def forward(self):
         """Generate according to the topological order of the graph,
@@ -134,19 +137,50 @@ class CGNN_model(th.nn.Module):
         self.noise.data.normal_()
         if not self.confounding:
             for i in self.topological_order:
-                self.generated[i] = self.blocks[i](th.cat([v for c in [
-                                                   [self.generated[j] for j in np.nonzero(self.adjacency_matrix[:, i])[0]],
-                                                   [self.noise[:, [i]]]] for v in c], 1))
+                self.generated[i] = self.blocks[i](
+                    th.cat(
+                        [
+                            v
+                            for c in [
+                                [self.generated[j] for j in np.nonzero(self.adjacency_matrix[:, i])[0]],
+                                [self.noise[:, [i]]],
+                            ]
+                            for v in c
+                        ],
+                        1,
+                    )
+                )
         else:
             for i in self.topological_order:
-                self.generated[i] = self.blocks[i](th.cat([v for c in [
-                                                   [self.generated[j] for j in np.nonzero(self.adjacency_matrix[:, i])[0]],
-                                                   [self.corr_noise[min(i, j), max(i, j)] for j in np.nonzero(self.i_adj_matrix[:, i])[0]]
-                                                   [self.noise[:, [i]]]] for v in c], 1))
+                self.generated[i] = self.blocks[i](
+                    th.cat(
+                        [
+                            v
+                            for c in [
+                                [self.generated[j] for j in np.nonzero(self.adjacency_matrix[:, i])[0]],
+                                [
+                                    self.corr_noise[min(i, j), max(i, j)]
+                                    for j in np.nonzero(self.i_adj_matrix[:, i])[0]
+                                ][self.noise[:, [i]]],
+                            ]
+                            for v in c
+                        ],
+                        1,
+                    )
+                )
         return th.cat(self.generated, 1)
 
-    def run(self, dataset, train_epochs=1000, test_epochs=1000, verbose=None,
-            idx=0, lr=0.01, dataloader_workers=0, **kwargs):
+    def run(
+        self,
+        dataset,
+        train_epochs=1000,
+        test_epochs=1000,
+        verbose=None,
+        idx=0,
+        lr=0.01,
+        dataloader_workers=0,
+        **kwargs
+    ):
         """Run the CGNN on a given graph.
 
         Args:
@@ -164,9 +198,9 @@ class CGNN_model(th.nn.Module):
         verbose = SETTINGS.get_default(verbose=verbose)
         optim = th.optim.Adam(self.parameters(), lr=lr)
         self.score.zero_()
-        dataloader = DataLoader(dataset, batch_size=self.batch_size,
-                                shuffle=True, drop_last=True,
-                                num_workers=dataloader_workers)
+        dataloader = DataLoader(
+            dataset, batch_size=self.batch_size, shuffle=True, drop_last=True, num_workers=dataloader_workers
+        )
 
         with trange(train_epochs + test_epochs, disable=not verbose) as t:
             for epoch in t:
@@ -189,7 +223,7 @@ class CGNN_model(th.nn.Module):
             block.reset_parameters()
 
 
-def graph_evaluation(data, adj_matrix, device='cpu', batch_size=-1, **kwargs):
+def graph_evaluation(data, adj_matrix, device="cpu", batch_size=-1, **kwargs):
     """Evaluate a graph taking account of the hardware."""
     if isinstance(data, th.utils.data.Dataset):
         obs = data.to(device)
@@ -202,19 +236,14 @@ def graph_evaluation(data, adj_matrix, device='cpu', batch_size=-1, **kwargs):
     return cgnn.run(obs, **kwargs)
 
 
-def parallel_graph_evaluation(data, adj_matrix, nruns=16,
-                              njobs=None, gpus=None, **kwargs):
+def parallel_graph_evaluation(data, adj_matrix, nruns=16, njobs=None, gpus=None, **kwargs):
     """Parallelize the various runs of CGNN to evaluate a graph."""
-    njobs, gpus = SETTINGS.get_default(('njobs', njobs), ('gpu', gpus))
+    njobs, gpus = SETTINGS.get_default(("njobs", njobs), ("gpu", gpus))
 
     if gpus == 0:
-        output = [graph_evaluation(data, adj_matrix,
-                                   device=SETTINGS.default_device, **kwargs)
-                  for run in range(nruns)]
+        output = [graph_evaluation(data, adj_matrix, device=SETTINGS.default_device, **kwargs) for run in range(nruns)]
     else:
-        output = parallel_run(graph_evaluation, data,
-                              adj_matrix, njobs=njobs,
-                              gpus=gpus, nruns=nruns, **kwargs)
+        output = parallel_run(graph_evaluation, data, adj_matrix, njobs=njobs, gpus=gpus, nruns=nruns, **kwargs)
     return np.mean(output)
 
 
@@ -225,25 +254,23 @@ def hill_climbing(data, graph, **kwargs):
     elif isinstance(data, pd.DataFrame):
         nodelist = list(data.columns)
     else:
-        raise TypeError('Data type not understood')
-    tested_candidates = [nx.adj_matrix(graph, nodelist=nodelist, weight=None)]
-    best_score = parallel_graph_evaluation(data,
-                                           tested_candidates[0].todense(),
-                                           ** kwargs)
+        raise TypeError("Data type not understood")
+    tested_candidates = [nx.adjacency_matrix(graph, nodelist=nodelist, weight=None)]
+    best_score = parallel_graph_evaluation(data, tested_candidates[0].todense(), **kwargs)
     best_candidate = graph
     can_improve = True
     while can_improve:
         can_improve = False
-        for (i, j) in best_candidate.edges():
+        for i, j in best_candidate.edges():
             test_graph = deepcopy(best_candidate)
-            test_graph.add_edge(j, i, weight=test_graph[i][j]['weight'])
+            test_graph.add_edge(j, i, weight=test_graph[i][j]["weight"])
             test_graph.remove_edge(i, j)
-            tadjmat = nx.adj_matrix(test_graph, nodelist=nodelist, weight=None)
-            if (nx.is_directed_acyclic_graph(test_graph) and not any([(tadjmat != cand).nnz ==
-                                                                      0 for cand in tested_candidates])):
+            tadjmat = nx.adjacency_matrix(test_graph, nodelist=nodelist, weight=None)
+            if nx.is_directed_acyclic_graph(test_graph) and not any(
+                [(tadjmat != cand).nnz == 0 for cand in tested_candidates]
+            ):
                 tested_candidates.append(tadjmat)
-                score = parallel_graph_evaluation(data, tadjmat.todense(),
-                                                  **kwargs)
+                score = parallel_graph_evaluation(data, tadjmat.todense(), **kwargs)
                 if score < best_score:
                     can_improve = True
                     best_candidate = test_graph
@@ -314,10 +341,20 @@ class CGNN(GraphModel):
         >>> plt.show()
     """
 
-    def __init__(self, nh=20, nruns=16, njobs=None, gpus=None, batch_size=-1,
-                 lr=0.01, train_epochs=1000, test_epochs=1000, verbose=None,
-                 dataloader_workers=0):
-        """ Initialize the CGNN Model."""
+    def __init__(
+        self,
+        nh=20,
+        nruns=16,
+        njobs=None,
+        gpus=None,
+        batch_size=-1,
+        lr=0.01,
+        train_epochs=1000,
+        test_epochs=1000,
+        verbose=None,
+        dataloader_workers=0,
+    ):
+        """Initialize the CGNN Model."""
         super(CGNN, self).__init__()
         self.nh = nh
         self.nruns = nruns
@@ -341,8 +378,10 @@ class CGNN(GraphModel):
         Returns:
             networkx.DiGraph: Solution given by CGNN.
         """
-        warnings.warn("An exhaustive search of the causal structure of CGNN without"
-                      " skeleton is super-exponential in the number of variables.")
+        warnings.warn(
+            "An exhaustive search of the causal structure of CGNN without"
+            " skeleton is super-exponential in the number of variables."
+        )
 
         # Building all possible candidates:
         if not isinstance(data, th.utils.data.Dataset):
@@ -351,18 +390,32 @@ class CGNN(GraphModel):
         else:
             nb_vars = data.__featurelen__()
             names = data.get_names()
-        candidates = [np.reshape(np.array(i), (nb_vars, nb_vars)) for i in itertools.product([0, 1], repeat=nb_vars*nb_vars)
-                      if (np.trace(np.reshape(np.array(i), (nb_vars, nb_vars))) == 0
-                          and nx.is_directed_acyclic_graph(nx.DiGraph(np.reshape(np.array(i), (nb_vars, nb_vars)))))]
+        candidates = [
+            np.reshape(np.array(i), (nb_vars, nb_vars))
+            for i in itertools.product([0, 1], repeat=nb_vars * nb_vars)
+            if (
+                np.trace(np.reshape(np.array(i), (nb_vars, nb_vars))) == 0
+                and nx.is_directed_acyclic_graph(nx.DiGraph(np.reshape(np.array(i), (nb_vars, nb_vars))))
+            )
+        ]
         warnings.warn("A total of {} graphs will be evaluated.".format(len(candidates)))
-        scores = [parallel_graph_evaluation(data, i, njobs=self.njobs, nh=self.nh,
-                                            nruns=self.nruns, gpus=self.gpus,
-                                            lr=self.lr, train_epochs=self.train_epochs,
-                                            test_epochs=self.test_epochs,
-                                            verbose=self.verbose,
-                                            batch_size=self.batch_size,
-                                            dataloader_workers=self.dataloader_workers)
-                  for i in candidates]
+        scores = [
+            parallel_graph_evaluation(
+                data,
+                i,
+                njobs=self.njobs,
+                nh=self.nh,
+                nruns=self.nruns,
+                gpus=self.gpus,
+                lr=self.lr,
+                train_epochs=self.train_epochs,
+                test_epochs=self.test_epochs,
+                verbose=self.verbose,
+                batch_size=self.batch_size,
+                dataloader_workers=self.dataloader_workers,
+            )
+            for i in candidates
+        ]
         final_candidate = candidates[scores.index(min(scores))]
         output = np.zeros(final_candidate.shape)
 
@@ -371,12 +424,13 @@ class CGNN(GraphModel):
             if x > 0:
                 cand = np.copy(final_candidate)
                 cand[i, j] = 0
-                output[i, j] = min(scores) - scores[[np.array_equal(cand, tgraph)
-                                                     for tgraph in candidates].index(True)]
+                output[i, j] = (
+                    min(scores) - scores[[np.array_equal(cand, tgraph) for tgraph in candidates].index(True)]
+                )
         prediction = nx.DiGraph(final_candidate * output)
         return nx.relabel_nodes(prediction, {idx: i for idx, i in enumerate(names)})
 
-    def orient_directed_graph(self, data, dag, alg='HC'):
+    def orient_directed_graph(self, data, dag, alg="HC"):
         """Modify and improve a directed acyclic graph solution using CGNN.
 
         Args:
@@ -390,19 +444,27 @@ class CGNN(GraphModel):
             networkx.DiGraph: Solution given by CGNN.
 
         """
-        alg_dic = {'HC': hill_climbing}  # , 'HCr': hill_climbing_with_removal,
+        alg_dic = {"HC": hill_climbing}  # , 'HCr': hill_climbing_with_removal,
         # 'tabu': tabu_search, 'EHC': exploratory_hill_climbing}
         # if not isinstance(data, th.utils.data.Dataset):
         #     data = MetaDataset(data)
 
-        return alg_dic[alg](data, dag, njobs=self.njobs, nh=self.nh,
-                            nruns=self.nruns, gpus=self.gpus,
-                            lr=self.lr, train_epochs=self.train_epochs,
-                            test_epochs=self.test_epochs, verbose=self.verbose,
-                            batch_size=self.batch_size,
-                            dataloader_workers=self.dataloader_workers)
+        return alg_dic[alg](
+            data,
+            dag,
+            njobs=self.njobs,
+            nh=self.nh,
+            nruns=self.nruns,
+            gpus=self.gpus,
+            lr=self.lr,
+            train_epochs=self.train_epochs,
+            test_epochs=self.test_epochs,
+            verbose=self.verbose,
+            batch_size=self.batch_size,
+            dataloader_workers=self.dataloader_workers,
+        )
 
-    def orient_undirected_graph(self, data, umg, alg='HC'):
+    def orient_undirected_graph(self, data, umg, alg="HC"):
         """Orient the undirected graph using GNN and apply CGNN to improve the graph.
 
         Args:
@@ -419,13 +481,22 @@ class CGNN(GraphModel):
            GNN (``cdt.causality.pairwise.GNN``) is first used to orient the
            undirected graph and output a DAG before applying CGNN.
         """
-        warnings.warn("The pairwise GNN model is computed on each edge of the UMG "
-                      "to initialize the model and start CGNN with a DAG")
-        gnn = GNN(nh=self.nh, lr=self.lr, nruns=self.nruns,
-                  njobs=self.njobs,
-                  train_epochs=self.train_epochs, test_epochs=self.test_epochs,
-                  verbose=self.verbose, gpus=self.gpus, batch_size=self.batch_size,
-                  dataloader_workers=self.dataloader_workers)
+        warnings.warn(
+            "The pairwise GNN model is computed on each edge of the UMG "
+            "to initialize the model and start CGNN with a DAG"
+        )
+        gnn = GNN(
+            nh=self.nh,
+            lr=self.lr,
+            nruns=self.nruns,
+            njobs=self.njobs,
+            train_epochs=self.train_epochs,
+            test_epochs=self.test_epochs,
+            verbose=self.verbose,
+            gpus=self.gpus,
+            batch_size=self.batch_size,
+            dataloader_workers=self.dataloader_workers,
+        )
 
         og = gnn.orient_graph(data, umg)  # Pairwise method
         dag = dagify_min_edge(og)

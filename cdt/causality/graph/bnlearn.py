@@ -28,19 +28,21 @@ Author: Diviyan Kalainathan
 import os
 import uuid
 import warnings
-import networkx as nx
 from pathlib import Path
 from shutil import rmtree
 from tempfile import gettempdir
-from .model import GraphModel
+
+import networkx as nx
 from pandas import DataFrame, read_csv
+
 from ...utils.R import RPackages, launch_R_script
 from ...utils.Settings import SETTINGS
+from .model import GraphModel
 
 
 def message_warning(msg, *a, **kwargs):
     """Ignore everything except the message."""
-    return str(msg) + '\n'
+    return str(msg) + "\n"
 
 
 warnings.formatwarning = message_warning
@@ -117,24 +119,25 @@ class BNlearnAlgorithm(GraphModel):
                factor). Only the asymptotic χ2 test (mi-cg) is implemented.
     """
 
-    def __init__(self, score='NULL', alpha=0.05, beta='NULL',
-                 optim=False, verbose=None, algorithm=None):
+    def __init__(self, score="NULL", alpha=0.05, beta="NULL", optim=False, verbose=None, algorithm=None):
         """Init the model."""
         if not RPackages.bnlearn:
             raise ImportError("R Package bnlearn is not available.")
         super(BNlearnAlgorithm, self).__init__()
-        self.arguments = {'{FOLDER}': '/tmp/cdt_bnlearn/',
-                          '{FILE}': os.sep + 'data.csv',
-                          '{SKELETON}': 'FALSE',
-                          '{ALGORITHM}': algorithm,
-                          '{WHITELIST}': os.sep + 'whitelist.csv',
-                          '{BLACKLIST}': os.sep + 'blacklist.csv',
-                          '{SCORE}': 'NULL',
-                          '{OPTIM}': 'FALSE',
-                          '{ALPHA}': '0.05',
-                          '{BETA}': 'NULL',
-                          '{VERBOSE}': 'FALSE',
-                          '{OUTPUT}': os.sep + 'result.csv'}
+        self.arguments = {
+            "{FOLDER}": "/tmp/cdt_bnlearn/",
+            "{FILE}": os.sep + "data.csv",
+            "{SKELETON}": "FALSE",
+            "{ALGORITHM}": algorithm,
+            "{WHITELIST}": os.sep + "whitelist.csv",
+            "{BLACKLIST}": os.sep + "blacklist.csv",
+            "{SCORE}": "NULL",
+            "{OPTIM}": "FALSE",
+            "{ALPHA}": "0.05",
+            "{BETA}": "NULL",
+            "{VERBOSE}": "FALSE",
+            "{OUTPUT}": os.sep + "result.csv",
+        }
         self.score = score
         self.alpha = alpha
         self.beta = beta
@@ -153,37 +156,45 @@ class BNlearnAlgorithm(GraphModel):
 
         """
         # Building setup w/ arguments.
-        self.arguments['{VERBOSE}'] = str(self.verbose).upper()
-        self.arguments['{SCORE}'] = self.score
-        self.arguments['{BETA}'] = str(self.beta)
-        self.arguments['{OPTIM}'] = str(self.optim).upper()
-        self.arguments['{ALPHA}'] = str(self.alpha)
+        self.arguments["{VERBOSE}"] = str(self.verbose).upper()
+        self.arguments["{SCORE}"] = self.score
+        self.arguments["{BETA}"] = str(self.beta)
+        self.arguments["{OPTIM}"] = str(self.optim).upper()
+        self.arguments["{ALPHA}"] = str(self.alpha)
 
         cols = list(data.columns)
         data.columns = [i for i in range(data.shape[1])]
-        mapping = {j: i for i, j in zip(['X' + str(i) for i
-                                         in range(data.shape[1])], cols)}
+        mapping = {j: i for i, j in zip(["X" + str(i) for i in range(data.shape[1])], cols)}
 
         graph2 = nx.relabel_nodes(graph, mapping)
 
         whitelist = DataFrame(list(nx.edges(graph2)), columns=["from", "to"])
-        blacklist = DataFrame(list(nx.edges(nx.DiGraph(DataFrame(-nx.adj_matrix(graph2, weight=None).todense() + 1,
-                                                                 columns=list(graph2.nodes()),
-                                                                 index=list(graph2.nodes()))))), columns=["from", "to"])
-        results = self._run_bnlearn(data, whitelist=whitelist,
-                                   blacklist=blacklist, verbose=self.verbose)
+        blacklist = DataFrame(
+            list(
+                nx.edges(
+                    nx.DiGraph(
+                        DataFrame(
+                            -nx.adjacency_matrix(graph2, weight=None).todense() + 1,
+                            columns=list(graph2.nodes()),
+                            index=list(graph2.nodes()),
+                        )
+                    )
+                )
+            ),
+            columns=["from", "to"],
+        )
+        results = self._run_bnlearn(data, whitelist=whitelist, blacklist=blacklist, verbose=self.verbose)
         try:
-            return nx.relabel_nodes(nx.DiGraph(results),
-                                    {idx: i for idx, i in enumerate(cols)})
+            return nx.relabel_nodes(nx.DiGraph(results), {idx: i for idx, i in enumerate(cols)})
 
         except nx.exception.NetworkXError as e:
             if results.shape[1] == 2:
                 output = nx.DiGraph()
-                output.add_nodes_from(['X' + str(i) for i in range(data.shape[1])])
+                output.add_nodes_from(["X" + str(i) for i in range(data.shape[1])])
                 output.add_edges_from(results)
-                return nx.relabel_nodes(output, {i: j for i, j in
-                                                 zip(['X' + str(i) for i
-                                                      in range(data.shape[1])], cols)})
+                return nx.relabel_nodes(
+                    output, {i: j for i, j in zip(["X" + str(i) for i in range(data.shape[1])], cols)}
+                )
             else:
                 raise e
 
@@ -215,49 +226,51 @@ class BNlearnAlgorithm(GraphModel):
 
         """
         # Building setup w/ arguments.
-        self.arguments['{SCORE}'] = self.score
-        self.arguments['{VERBOSE}'] = str(self.verbose).upper()
-        self.arguments['{BETA}'] = str(self.beta)
-        self.arguments['{OPTIM}'] = str(self.optim).upper()
-        self.arguments['{ALPHA}'] = str(self.alpha)
+        self.arguments["{SCORE}"] = self.score
+        self.arguments["{VERBOSE}"] = str(self.verbose).upper()
+        self.arguments["{BETA}"] = str(self.beta)
+        self.arguments["{OPTIM}"] = str(self.optim).upper()
+        self.arguments["{ALPHA}"] = str(self.alpha)
 
         cols = list(data.columns)
         data2 = data.copy()
         data2.columns = [i for i in range(data.shape[1])]
         results = self._run_bnlearn(data2, verbose=self.verbose)
         graph = nx.DiGraph()
-        graph.add_nodes_from(['X' + str(i) for i in range(data.shape[1])])
+        graph.add_nodes_from(["X" + str(i) for i in range(data.shape[1])])
         graph.add_edges_from(results)
-        return nx.relabel_nodes(graph, {i: j for i, j in
-                                        zip(['X' + str(i) for i
-                                             in range(data.shape[1])], cols)})
+        return nx.relabel_nodes(graph, {i: j for i, j in zip(["X" + str(i) for i in range(data.shape[1])], cols)})
 
     def _run_bnlearn(self, data, whitelist=None, blacklist=None, verbose=True):
         """Setting up and running bnlearn with all arguments."""
         # Run the algorithm
-        self.arguments['{FOLDER}'] = Path('{0!s}/cdt_bnlearn_{1!s}/'.format(gettempdir(), uuid.uuid4()))
-        run_dir = self.arguments['{FOLDER}']
+        self.arguments["{FOLDER}"] = Path("{0!s}/cdt_bnlearn_{1!s}/".format(gettempdir(), uuid.uuid4()))
+        run_dir = self.arguments["{FOLDER}"]
         os.makedirs(run_dir, exist_ok=True)
 
         def retrieve_result():
-            return read_csv(Path('{}/result.csv'.format(run_dir)), delimiter=',').values
+            return read_csv(Path("{}/result.csv".format(run_dir)), delimiter=",").values
 
         try:
-            data.to_csv(Path('{}/data.csv'.format(run_dir)), index=False)
+            data.to_csv(Path("{}/data.csv".format(run_dir)), index=False)
             if blacklist is not None:
-                blacklist.to_csv(Path('{}/blacklist.csv'.format(run_dir)), index=False, header=False)
-                self.arguments['{E_BLACKL}'] = 'TRUE'
+                blacklist.to_csv(Path("{}/blacklist.csv".format(run_dir)), index=False, header=False)
+                self.arguments["{E_BLACKL}"] = "TRUE"
             else:
-                self.arguments['{E_BLACKL}'] = 'FALSE'
+                self.arguments["{E_BLACKL}"] = "FALSE"
 
             if whitelist is not None:
-                whitelist.to_csv(Path('{}/whitelist.csv'.format(run_dir)), index=False, header=False)
-                self.arguments['{E_WHITEL}'] = 'TRUE'
+                whitelist.to_csv(Path("{}/whitelist.csv".format(run_dir)), index=False, header=False)
+                self.arguments["{E_WHITEL}"] = "TRUE"
             else:
-                self.arguments['{E_WHITEL}'] = 'FALSE'
+                self.arguments["{E_WHITEL}"] = "FALSE"
 
-            bnlearn_result = launch_R_script(Path("{}/R_templates/bnlearn.R".format(os.path.dirname(os.path.realpath(__file__)))),
-                                             self.arguments, output_function=retrieve_result, verbose=verbose)
+            bnlearn_result = launch_R_script(
+                Path("{}/R_templates/bnlearn.R".format(os.path.dirname(os.path.realpath(__file__)))),
+                self.arguments,
+                output_function=retrieve_result,
+                verbose=verbose,
+            )
         # Cleanup
         except Exception as e:
             rmtree(run_dir)
@@ -312,11 +325,9 @@ class GS(BNlearnAlgorithm):
         >>> plt.show()
     """
 
-    def __init__(self, score='NULL', alpha=0.05, beta='NULL',
-                 optim=False, verbose=None):
+    def __init__(self, score="NULL", alpha=0.05, beta="NULL", optim=False, verbose=None):
         """Init the model."""
-        super(GS, self).__init__(score='NULL', alpha=0.05, beta='NULL',
-                                 optim=False, verbose=None, algorithm="gs")
+        super(GS, self).__init__(score="NULL", alpha=0.05, beta="NULL", optim=False, verbose=None, algorithm="gs")
 
 
 class IAMB(BNlearnAlgorithm):
@@ -358,11 +369,9 @@ class IAMB(BNlearnAlgorithm):
         >>> plt.show()
     """
 
-    def __init__(self, score='NULL', alpha=0.05, beta='NULL',
-                 optim=False, verbose=None):
+    def __init__(self, score="NULL", alpha=0.05, beta="NULL", optim=False, verbose=None):
         """Init the model."""
-        super(IAMB, self).__init__(score='NULL', alpha=0.05, beta='NULL',
-                                   optim=False, verbose=None, algorithm="iamb")
+        super(IAMB, self).__init__(score="NULL", alpha=0.05, beta="NULL", optim=False, verbose=None, algorithm="iamb")
 
 
 class Fast_IAMB(BNlearnAlgorithm):
@@ -404,11 +413,11 @@ class Fast_IAMB(BNlearnAlgorithm):
         >>> plt.show()
     """
 
-    def __init__(self, score='NULL', alpha=0.05, beta='NULL',
-                 optim=False, verbose=None):
+    def __init__(self, score="NULL", alpha=0.05, beta="NULL", optim=False, verbose=None):
         """Init the model."""
-        super(Fast_IAMB, self).__init__(score='NULL', alpha=0.05, beta='NULL',
-                                        optim=False, verbose=None, algorithm='fast.iamb')
+        super(Fast_IAMB, self).__init__(
+            score="NULL", alpha=0.05, beta="NULL", optim=False, verbose=None, algorithm="fast.iamb"
+        )
 
 
 class Inter_IAMB(BNlearnAlgorithm):
@@ -449,11 +458,11 @@ class Inter_IAMB(BNlearnAlgorithm):
         >>> plt.show()
     """
 
-    def __init__(self, score='NULL', alpha=0.05, beta='NULL',
-                 optim=False, verbose=None):
+    def __init__(self, score="NULL", alpha=0.05, beta="NULL", optim=False, verbose=None):
         """Init the model."""
-        super(Inter_IAMB, self).__init__(score='NULL', alpha=0.05, beta='NULL',
-                                         optim=False, verbose=None, algorithm="inter.iamb")
+        super(Inter_IAMB, self).__init__(
+            score="NULL", alpha=0.05, beta="NULL", optim=False, verbose=None, algorithm="inter.iamb"
+        )
 
 
 class MMPC(BNlearnAlgorithm):
@@ -501,8 +510,6 @@ class MMPC(BNlearnAlgorithm):
         >>> plt.show()
     """
 
-    def __init__(self, score='NULL', alpha=0.05, beta='NULL',
-                 optim=False, verbose=None):
+    def __init__(self, score="NULL", alpha=0.05, beta="NULL", optim=False, verbose=None):
         """Init the model."""
-        super(MMPC, self).__init__(score='NULL', alpha=0.05, beta='NULL',
-                                   optim=False, verbose=None, algorithm='mmpc')
+        super(MMPC, self).__init__(score="NULL", alpha=0.05, beta="NULL", optim=False, verbose=None, algorithm="mmpc")

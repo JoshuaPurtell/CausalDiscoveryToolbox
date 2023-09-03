@@ -109,7 +109,7 @@ understand the output of the toolbox's outputs:
    >>> import networkx as nx
    >>> g = nx.DiGraph()  # initialize a directed graph
    >>> l = list(g.nodes())  # list of nodes in the graph
-   >>> a = nx.adj_matrix(g).todense()  # Output the adjacency matrix of the graph
+   >>> a = nx.adjacency_matrix(g).todense()  # Output the adjacency matrix of the graph
    >>> e = list(g.edges())  # list of edges in the graph
 
 Please refer to `networkx` 's documentation for more detailed information:
